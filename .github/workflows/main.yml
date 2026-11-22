@@ -22,6 +22,8 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
       - name: Extract Android project ZIP
         shell: bash
@@ -37,11 +39,14 @@ jobs:
 
           echo "Using ZIP: $ZIP_FILE"
 
+          rm -rf extracted
           mkdir -p extracted
+
           unzip -q "$ZIP_FILE" -d extracted
 
-          echo "Extracted files:"
-          find extracted -maxdepth 4 -type f | sort | head -200
+          echo "ZIP extracted successfully."
+
+          find extracted -maxdepth 5 -type f | sort | head -200
 
       - name: Find Android project
         shell: bash
@@ -51,13 +56,13 @@ jobs:
           PROJECT_DIR="$(find extracted -type f \( -name 'settings.gradle.kts' -o -name 'settings.gradle' \) -printf '%h\n' | head -n 1)"
 
           if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: settings.gradle.kts or settings.gradle was not found."
-            echo "ZIP structure:"
-            find extracted -maxdepth 6 -print
+            echo "ERROR: Android project was not found."
+            echo "Searching extracted files:"
+            find extracted -maxdepth 8 -print
             exit 1
           fi
 
-          echo "Android project found at:"
+          echo "Android project found:"
           echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
@@ -74,11 +79,11 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          echo "Building project in:"
+          echo "Building:"
           pwd
 
-          echo "Project files:"
-          find . -maxdepth 3 -type f | sort
+          echo "Project contents:"
+          find . -maxdepth 4 -type f | sort
 
           gradle --no-daemon --stacktrace assembleDebug
 
@@ -94,7 +99,7 @@ jobs:
             exit 1
           fi
 
-          echo "APK generated:"
+          echo "APK generated successfully:"
           echo "$APK"
 
           echo "APK_PATH=$APK" >> "$GITHUB_ENV"
