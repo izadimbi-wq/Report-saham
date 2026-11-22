@@ -28,7 +28,7 @@ jobs:
       - name: Extract Android project ZIP
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           ZIP_FILE="$(find . -maxdepth 2 -type f -name '*.zip' | head -n 1)"
 
@@ -41,121 +41,103 @@ jobs:
 
           rm -rf extracted
           mkdir -p extracted
-
           unzip -q "$ZIP_FILE" -d extracted
 
           echo "ZIP extracted successfully."
-          find extracted -maxdepth 6 -type f | sort | head -300
 
       - name: Find Android project
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           PROJECT_DIR="$(find extracted -type f \( -name 'settings.gradle.kts' -o -name 'settings.gradle' \) -printf '%h\n' | head -n 1)"
 
           if [ -z "$PROJECT_DIR" ]; then
             echo "ERROR: Android project was not found."
-            echo "Searching extracted files:"
             find extracted -maxdepth 8 -print
             exit 1
           fi
 
-          echo "Android project found:"
-          echo "$PROJECT_DIR"
-
+          echo "Android project: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Verify app module
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          if [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
-            echo "ERROR: app/build.gradle.kts was not found."
-            echo "Project contents:"
+          APP_GRADLE="$PROJECT_DIR/app/build.gradle.kts"
+
+          if [ ! -f "$APP_GRADLE" ]; then
+            echo "ERROR: $APP_GRADLE was not found."
             find "$PROJECT_DIR" -maxdepth 4 -type f | sort
             exit 1
           fi
 
-          echo "Found:"
-          echo "$PROJECT_DIR/app/build.gradle.kts"
+          echo "Using module Gradle file:"
+          echo "$APP_GRADLE"
 
-      - name: Create debug keystore
+      - name: Prepare clean build
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          KEYSTORE="$PROJECT_DIR/app/debug.keystore"
+          rm -rf "$PROJECT_DIR/app/build"
+          rm -rf "$PROJECT_DIR/.gradle"
 
-          if [ -f "$KEYSTORE" ]; then
-            echo "debug.keystore already exists."
-          else
-            keytool -genkeypair               -v               -keystore "$KEYSTORE"               -storepass android               -keypass android               -alias androiddebugkey               -keyalg RSA               -keysize 2048               -validity 10000               -dname "CN=Android Debug,O=Android,C=US"
-
-            echo "debug.keystore created successfully."
-          fi
-
-          ls -lh "$KEYSTORE"
+          echo "Previous build outputs removed."
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Build signed Debug APK
+      - name: Build debug APK
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           cd "$PROJECT_DIR"
 
-          echo "Building:"
-          pwd
+          gradle --no-daemon --stacktrace clean assembleDebug
 
-          echo "Project contents:"
-          find . -maxdepth 4 -type f | sort
-
-          gradle --no-daemon --stacktrace assembleDebug
-
-      - name: Find APK
+      - name: Verify exact APK exists
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          APK="$(find "$PROJECT_DIR" -type f -name '*.apk' | head -n 1)"
+          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
-          if [ -z "$APK" ]; then
-            echo "ERROR: APK was not generated."
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: Expected APK was not generated:"
+            echo "$APK"
+            find "$PROJECT_DIR/app/build" -type f -name '*.apk' -print 2>/dev/null || true
             exit 1
           fi
 
-          echo "APK generated successfully:"
-          echo "$APK"
-
+          echo "APK found:"
+          ls -lh "$APK"
           echo "APK_PATH=$APK" >> "$GITHUB_ENV"
 
-      - name: Verify APK
+      - name: Verify APK signature
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "Verifying APK:"
-          ls -lh "$APK_PATH"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
 
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name 'apksigner' | sort -V | tail -n 1)"
-
-          if [ -z "$APKSIGNER" ]; then
-            echo "ERROR: apksigner was not found."
+          if [ ! -x "$APKSIGNER" ]; then
+            echo "ERROR: apksigner not found:"
+            echo "$APKSIGNER"
             exit 1
           fi
 
-          echo "Using apksigner:"
-          echo "$APKSIGNER"
-
+          echo "Running APK signature verification..."
           "$APKSIGNER" verify --verbose "$APK_PATH"
 
-      - name: Upload APK
+          echo "APK signature verification PASSED."
+
+      - name: Upload verified APK
         uses: actions/upload-artifact@v4
         with:
           name: Report-saham-debug-apk
