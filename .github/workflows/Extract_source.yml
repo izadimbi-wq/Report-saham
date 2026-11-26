@@ -1,0 +1,61 @@
+
+name: Extract v1.30 Source
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Verify and extract ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ZIP_FILE="Report-saham-v1.30-ui-fix-source.zip"
+
+          test -f "$ZIP_FILE"
+
+          mkdir -p extracted-v1.30
+
+          unzip -o "$ZIP_FILE" -d extracted-v1.30
+
+          if ! find extracted-v1.30 -type f | grep -q .; then
+            echo "ERROR: No source files extracted"
+            exit 1
+          fi
+
+          echo "Extracted files:"
+          find extracted-v1.30 -type f
+
+      - name: Create inspection branch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git switch -c inspect-v1.30
+
+          git add extracted-v1.30
+
+          if git diff --cached --quiet; then
+            echo "No new extracted files"
+            exit 1
+          fi
+
+          git commit -m "Extract v1.30 source for inspection"
+
+          git push origin inspect-v1.30
