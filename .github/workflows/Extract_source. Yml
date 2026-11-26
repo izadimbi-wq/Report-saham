@@ -1,0 +1,43 @@
+
+name: Extract v1.30 Source
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Extract source ZIP
+        run: |
+          set -e
+          ZIP_FILE="Report-saham-v1.30-ui-fix-source.zip"
+
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "Source ZIP not found"
+            exit 1
+          fi
+
+          mkdir -p extracted-v1.30
+          unzip -o "$ZIP_FILE" -d extracted-v1.30
+
+      - name: Create inspection branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git checkout -B inspect-v1.30
+
+          git add extracted-v1.30
+          git commit -m "Extract v1.30 source for inspection" || true
+          git push origin inspect-v1.30 --force
